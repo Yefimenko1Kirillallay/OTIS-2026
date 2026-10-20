@@ -4,8 +4,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <string>
+#include <filesystem>
+#include <memory>
 
-enum InputType
+namespace fs = std::filesystem;
+
+enum class InputType
 {
     Step,
     Impulse,
@@ -29,7 +33,7 @@ public:
 
     virtual void NextStep() = 0;
 
-    std::string GetFilename(){return filename;}
+    std::string GetFilename() const {return filename;}
 
     void StartModel(){
         while (t < n - 1)
@@ -37,12 +41,12 @@ public:
     }
 
     void CountU(double val_u = 0){
-        if (inputType == InputType::Step){
+        if (inputType == Step){
             u.assign(n, val_u);
-        } else if(inputType == InputType::Impulse){
+        } else if(inputType == Impulse){
             u.assign(n, 0);
             u[0] = 1;
-        } else if(inputType == InputType::Harmonic){
+        } else if(inputType == Harmonic){
             u.assign(n, 0);
             for (int i = 0; i<n; i++){
                 u[i] = std::sin(GetTime(i));
@@ -56,8 +60,10 @@ public:
         std::cout << "\n\n";
     }
 
-    void saveCSV(const std::string& filename) {
-    this->filename = filename+".csv";
+    void saveCSV(const std::string& userInput) {
+    fs::path inputPath(userInput);
+    std::string name = inputPath.filename().string();
+    this->filename = name + ".csv";
     std::ofstream file(this->filename);
     if (!file.is_open()) {
         std::cerr << "Не удалось открыть файл\n";
@@ -86,7 +92,7 @@ public:
     a1(a1), a2(a2), b(b), k(k){
         this->n = n;
         this->inputType = inputType;
-        CountU(u);
+        this->CountU(u);
         y.assign(n, 0.0);
         t = 0;
     }
@@ -212,10 +218,10 @@ void showGraph(const std::string& filename)
 int main(){
     setlocale(LC_ALL, "ru_RU.UTF-8");
 
-    Model* model = nullptr;
-    
      while (true)
     {
+        std::unique_ptr<Model> model;
+
         std::cout << "\n========== MODEL MENU ==========\n";
         std::cout << "1. Linear model\n";
         std::cout << "2. Nonlinear model\n";
@@ -242,7 +248,10 @@ int main(){
         // LINEAR MODEL
         if (modelChoice == 1)
         {
-            double a1, a2, b, u;
+            double a1;
+            double a2;
+            double b;
+            double u;
             int k;
 
             std::cout << "\n========== LINEAR MODEL ==========\n";
@@ -262,13 +271,16 @@ int main(){
             std::cout << "Enter u: ";
             std::cin >> u;
 
-            model = new Liner(a1, a2, b, k, n, inputType, u);
+            model = std::make_unique<Liner>(a1, a2, b, k, n, inputType, u);
         }
 
         // NONLINEAR MODEL
         else if (modelChoice == 2)
         {
-            double a, b, e, u;
+            double a;
+            double b;
+            double e;
+            double u;
 
             std::cout << "\n========== NONLINEAR MODEL ==========\n";
 
@@ -284,13 +296,15 @@ int main(){
             std::cout << "Enter u: ";
             std::cin >> u;
 
-            model = new NonLiner(a, b, e, n, inputType, u);
+            model = std::make_unique<NonLiner>(a, b, e, n, inputType, u);
         }
 
         // DIFFERENTIAL MODEL
         else if (modelChoice == 3)
         {
-            double b, dt, u;
+            double b;
+            double dt;
+            double u;
 
             std::cout << "\n========== DIFFERENTIAL MODEL ==========\n";
 
@@ -303,7 +317,7 @@ int main(){
             std::cout << "Enter u: ";
             std::cin >> u;
 
-            model = new Differential(b, dt, n, inputType, u);
+            model = std::make_unique<Differential>(b, dt, n, inputType, u);
         }
 
 
@@ -367,7 +381,6 @@ int main(){
                     break;
             }
         }
-        delete model;
     }
 
     return 0;
