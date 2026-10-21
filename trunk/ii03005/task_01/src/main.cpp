@@ -6,6 +6,10 @@
 #include <string>
 #include <filesystem>
 #include <memory>
+#include <clocale>
+#include <stdexcept>
+#include <format>
+#include <limits>
 
 namespace fs = std::filesystem;
 
@@ -16,372 +20,710 @@ enum class InputType
     Harmonic
 };
 
-class Model{
-protected:
-    int n;
-    int t;
-    InputType inputType;
-    std::vector<double> y;
-    std::vector<double> u;
-    std::string filename;
+class Model
+{
+private:
+    int n{};
+    int t{};
+    InputType inputType{InputType::Step};
+    std::vector<double> y{};
+    std::vector<double> u{};
+    std::string filename{};
 
-    virtual double GetTime(int i){return i;}
+    static int validateStepCount(int stepCount)
+    {
+        if (stepCount < 1)
+        {
+            throw std::invalid_argument(
+                "Number of steps must be greater than zero."
+            );
+        }
+
+        return stepCount;
+    }
+
+protected:
+    virtual double GetTime(int index) const
+    {
+        return static_cast<double>(index);
+    }
+
+    int currentStep() const
+    {
+        return t;
+    }
+
+    double outputAt(int index) const
+    {
+        return y.at(static_cast<std::size_t>(index));
+    }
+
+    void setOutput(int index, double value)
+    {
+        y.at(static_cast<std::size_t>(index)) = value;
+    }
+
+    double inputAt(int index) const
+    {
+        return u.at(static_cast<std::size_t>(index));
+    }
+
+    void advanceStep()
+    {
+        ++t;
+    }
+
+    void CountU(double inputValue = 0.0, double timeStep = 1.0)
+    {
+        switch (inputType)
+        {
+            using enum InputType;
+
+        case Step:
+            u.assign(static_cast<std::size_t>(n), inputValue);
+            break;
+
+        case Impulse:
+            u.assign(static_cast<std::size_t>(n), 0.0);
+            u[0] = 1.0;
+            break;
+
+        case Harmonic:
+            u.resize(static_cast<std::size_t>(n));
+
+            for (int index = 0; index < n; ++index)
+            {
+                u[static_cast<std::size_t>(index)] =
+                    std::sin(static_cast<double>(index) * timeStep);
+            }
+            break;
+        }
+    }
 
 public:
+    Model(int stepCount, InputType selectedInputType)
+        : n(validateStepCount(stepCount)),
+          t(0),
+          inputType(selectedInputType),
+          y(static_cast<std::size_t>(n), 0.0),
+          u(static_cast<std::size_t>(n), 0.0)
+    {
+    }
 
     virtual ~Model() = default;
 
     virtual void NextStep() = 0;
 
-    std::string GetFilename() const {return filename;}
-
-    void StartModel(){
-        while (t < n - 1)
-            NextStep();
+    std::string GetFilename() const
+    {
+        return filename;
     }
 
-    void CountU(double val_u = 0){
-        if (inputType == Step){
-            u.assign(n, val_u);
-        } else if(inputType == Impulse){
-            u.assign(n, 0);
-            u[0] = 1;
-        } else if(inputType == Harmonic){
-            u.assign(n, 0);
-            for (int i = 0; i<n; i++){
-                u[i] = std::sin(GetTime(i));
-            }
+    void StartModel()
+    {
+        while (t < n - 1)
+        {
+            NextStep();
         }
     }
 
-    void show_y(){
-        for (int i = 0; i < n; i++)
-            std::cout << i << " - " << y[i] << '\n';
-        std::cout << "\n\n";
+    void show_y() const
+    {
+        std::cout << '\n'
+                  << "+------------+----------------+----------------+\n"
+                  << "|      t     |        u       |        y       |\n"
+                  << "+------------+----------------+----------------+\n";
+
+        for (int index = 0; index < n; ++index)
+        {
+            std::cout << std::format(
+                "| {:>10.4f} | {:>14.4f} | {:>14.4f} |\n",
+                GetTime(index),
+                inputAt(index),
+                outputAt(index)
+            );
+        }
+
+        std::cout << "+------------+----------------+----------------+\n\n";
     }
 
-    void saveCSV(const std::string& userInput) {
-    fs::path inputPath(userInput);
-    std::string name = inputPath.filename().string();
-    this->filename = name + ".csv";
-    std::ofstream file(this->filename);
-    if (!file.is_open()) {
-        std::cerr << "Не удалось открыть файл\n";
-        return;
-    }
-    file << "t,u,y\n";
-    for (int i = 0; i < n; i++) {
-        file << GetTime(i) << ";" << u[i] << ";" << y[i] << "\n";
-    }
+    void saveCSV(const std::string& userInput)
+    {
+        const fs::path inputPath(userInput);
+        auto outputPath = inputPath.filename();
 
-    file.close();
-    }
+        if (outputPath.empty() ||
+            outputPath == "." ||
+            outputPath == "..")
+        {
+            std::cerr << "Invalid filename.\n";
+            return;
+        }
 
-    
+        if (outputPath.extension() != ".csv")
+        {
+            outputPath.replace_extension(".csv");
+        }
+
+        filename = outputPath.string();
+
+        std::ofstream file(filename);
+
+        if (!file.is_open())
+        {
+            std::cerr << "Не удалось открыть файл.\n";
+            return;
+        }
+
+        file << "t;u;y\n";
+
+        for (int index = 0; index < n; ++index)
+        {
+            file << std::format(
+                "{:.6f};{:.6f};{:.6f}\n",
+                GetTime(index),
+                inputAt(index),
+                outputAt(index)
+            );
+        }
+
+        if (!file)
+        {
+            std::cerr << "Ошибка записи CSV-файла.\n";
+            return;
+        }
+
+        std::cout << "CSV saved: " << filename << '\n';
+    }
 };
 
-
-class Liner: public Model{
+class Liner : public Model
+{
 private:
-    double a1;
-    double a2;
-    double b;
-    int k;
+    double a1{};
+    double a2{};
+    double b{};
+    int k{};
+
 public:
-    Liner(double a1, double a2, double b, int k, int n, InputType inputType, double u = 0):
-    a1(a1), a2(a2), b(b), k(k){
-        this->n = n;
-        this->inputType = inputType;
-        this->CountU(u);
-        y.assign(n, 0.0);
-        t = 0;
+    Liner(
+        double initialA1,
+        double initialA2,
+        double initialB,
+        int delay,
+        int stepCount,
+        InputType selectedInputType,
+        double inputValue = 0.0
+    )
+        : Model(stepCount, selectedInputType),
+          a1(initialA1),
+          a2(initialA2),
+          b(initialB),
+          k(delay)
+    {
+        if (delay < 0)
+        {
+            throw std::invalid_argument(
+                "Delay k cannot be negative."
+            );
+        }
+
+        CountU(inputValue);
     }
 
-    void NextStep() override {
-        double y_t = y[t];
-        double y_tk;
-        double y_new;
-        if (t < k)
-            y_tk = 0;
-        else
-            y_tk = y[t-k];
+    void NextStep() override
+    {
+        const auto step = currentStep();
+        const auto currentY = outputAt(step);
+        double delayedY{};
 
-        y_new = a1 * y_t + a2 * y_tk + b*u[t];
-        y[++t] = y_new;
+        if (step >= k)
+        {
+            delayedY = outputAt(step - k);
+        }
+
+        const auto newY =
+            a1 * currentY +
+            a2 * delayedY +
+            b * inputAt(step);
+
+        setOutput(step + 1, newY);
+        advanceStep();
     }
 
 };
 
 
-class NonLiner: public Model{
+class NonLiner: public Model
+{
 private:
-    double a;
-    double b;
-    double e;
+    double a{};
+    double b{};
+    double e{};
+
 public:
-    NonLiner(double a, double b, double e, int n, InputType inputType, double u = 0):
-    a(a), b(b), e(e) {
-        this->n = n;
-        this->inputType = inputType;
-        CountU(u);
-        y.assign(n, 0.0);
-        t = 0;
+    NonLiner(
+        double initialA,
+        double initialB,
+        double initialE,
+        int stepCount,
+        InputType selectedInputType,
+        double inputValue = 0.0
+    )
+        : Model(stepCount, selectedInputType),
+          a(initialA),
+          b(initialB),
+          e(initialE)
+    {
+        CountU(inputValue);
     }
 
-    double relay(double ut, double yt){
-        if (ut > e || (ut >= -e && yt > 0))
-            return 1;
-        else if (ut < -e || (ut <= e && yt <= 0))
-            return -1;
-        else
-            return 0;
+    double relay(double inputValue, double outputValue) const
+    {
+        if (inputValue > e ||
+            (inputValue >= -e && outputValue > 0.0))
+        {
+            return 1.0;
+        }
+
+        if (inputValue < -e ||
+            (inputValue <= e && outputValue <= 0.0))
+        {
+            return -1.0;
+        }
+
+        return 0.0;
     }
 
-    void NextStep() override {
-        double y_t = y[t];
-        double y_new = a * y_t + b * relay(u[t], y_t);
-        y[++t] = y_new;
+    void NextStep() override
+    {
+        const auto step = currentStep();
+        const auto currentY = outputAt(step);
+
+        const auto newY =
+            a * currentY +
+            b * relay(inputAt(step), currentY);
+
+        setOutput(step + 1, newY);
+        advanceStep();
     }
 };
 
 
-class Differential: public Model{
+class Differential : public Model
+{
 private:
-    double b; 
-    double dt;
+    double b{};
+    double dt{};
+
 protected:
-    double GetTime(int i)override{return i*dt;}
-public:
-    Differential(double b, double dt, int n, InputType inputType, double u = 0):
-    b(b), dt(dt){
-        this->n = n;
-        this->inputType = inputType;
-        this->CountU(u);
-        y.assign(n, 0.0);
-        t = 0;
+    double GetTime(int index) const override
+    {
+        return static_cast<double>(index) * dt;
     }
 
-    void NextStep() override {
-        double yt = y[t];
-        double y_new = yt + dt * b * std::tanh(u[t]);
-        y[++t] = y_new;        
+public:
+    Differential(
+        double initialB,
+        double timeStep,
+        int stepCount,
+        InputType selectedInputType,
+        double inputValue = 0.0
+    )
+        : Model(stepCount, selectedInputType),
+          b(initialB),
+          dt(timeStep)
+    {
+        if (timeStep <= 0.0)
+        {
+            throw std::invalid_argument(
+                "Time step dt must be greater than zero."
+            );
+        }
+
+        CountU(inputValue, dt);
     }
- 
+
+    void NextStep() override
+    {
+        const auto step = currentStep();
+        const auto currentY = outputAt(step);
+
+        const auto newY =
+            currentY + dt * b * std::tanh(inputAt(step));
+
+        setOutput(step + 1, newY);
+        advanceStep();
+    }
 };
 
+void printInputMenu()
+{
+    std::cout
+        << "\n========== INPUT TYPE ==========\n"
+        << "1. Step\n"
+        << "2. Impulse\n"
+        << "3. Harmonic\n"
+        << "Choose input: ";
+}
 
 InputType chooseInputType()
 {
-    int choice;
-
     while (true)
     {
-        std::cout << "\n========== INPUT TYPE ==========\n";
-        std::cout << "1. Step\n";
-        std::cout << "2. Impulse\n";
-        std::cout << "3. Harmonic\n";
-        std::cout << "Choose input: ";
+        printInputMenu();
 
-        std::cin >> choice;
-
-        switch (choice)
+        if (int choice{}; std::cin >> choice)
         {
+            switch (choice)
+            {
+                using enum InputType;
+
             case 1:
-                return InputType::Step;
+                return Step;
 
             case 2:
-                return InputType::Impulse;
+                return Impulse;
 
             case 3:
-                return InputType::Harmonic;
+                return Harmonic;
 
             default:
                 std::cout << "Invalid choice. Try again.\n";
+                break;
+            }
+        }
+        else
+        {
+            throw std::invalid_argument("Invalid input type.");
         }
     }
 }
 
 
 void showGraph(const std::string& filename)
-{   
-    std::string command =  std::string(PYTHON_EXECUTABLE) + " " + std::string(PLOT_SCRIPT) + " " + filename;
+{
+    const auto command =
+        std::string(PYTHON_EXECUTABLE) +
+        " \"" + std::string(PLOT_SCRIPT) +
+        "\" \"" + filename + "\"";
 
-    int result = std::system(command.c_str());
-
-    if (result != 0)
+    if (const auto result = std::system(command.c_str());
+        result != 0)
     {
-        std::cerr << "Не удалось запустить Python\n";
+        std::cerr << "Не удалось запустить Python.\n";
     }
 }
 
+std::unique_ptr<Model> createLinearModel(
+    int stepCount,
+    InputType inputType
+)
+{
+    double a1{};
+    double a2{};
+    double b{};
+    double inputValue{};
+    int delay{};
 
-int main(){
-    setlocale(LC_ALL, "ru_RU.UTF-8");
-
-     while (true)
+    std::cout << "Enter a1: ";
+    if (!(std::cin >> a1))
     {
-        std::unique_ptr<Model> model;
+        throw std::invalid_argument("Invalid a1.");
+    }
 
-        std::cout << "\n========== MODEL MENU ==========\n";
-        std::cout << "1. Linear model\n";
-        std::cout << "2. Nonlinear model\n";
-        std::cout << "3. Differential model\n";
-        std::cout << "0. Exit\n";
-        std::cout << "Choose model: ";
+    std::cout << "Enter a2: ";
+    if (!(std::cin >> a2))
+    {
+        throw std::invalid_argument("Invalid a2.");
+    }
 
-        int modelChoice;
-        std::cin >> modelChoice;
+    std::cout << "Enter b: ";
+    if (!(std::cin >> b))
+    {
+        throw std::invalid_argument("Invalid b.");
+    }
 
-        if (modelChoice == 0)
+    std::cout << "Enter delay k: ";
+    if (!(std::cin >> delay))
+    {
+        throw std::invalid_argument("Invalid delay.");
+    }
+
+    std::cout << "Enter input value: ";
+    if (!(std::cin >> inputValue))
+    {
+        throw std::invalid_argument("Invalid input value.");
+    }
+
+    return std::make_unique<Liner>(
+        a1, a2, b, delay, stepCount, inputType, inputValue
+    );
+}
+
+std::unique_ptr<Model> createNonlinearModel(
+    int stepCount,
+    InputType inputType
+)
+{
+    double a{};
+    double b{};
+    double threshold{};
+    double inputValue{};
+
+    std::cout << "Enter a: ";
+    if (!(std::cin >> a))
+    {
+        throw std::invalid_argument("Invalid a.");
+    }
+
+    std::cout << "Enter b: ";
+    if (!(std::cin >> b))
+    {
+        throw std::invalid_argument("Invalid b.");
+    }
+
+    std::cout << "Enter threshold e: ";
+    if (!(std::cin >> threshold))
+    {
+        throw std::invalid_argument("Invalid threshold.");
+    }
+
+    std::cout << "Enter input value: ";
+    if (!(std::cin >> inputValue))
+    {
+        throw std::invalid_argument("Invalid input value.");
+    }
+
+    return std::make_unique<NonLiner>(
+        a, b, threshold, stepCount, inputType, inputValue
+    );
+}
+
+std::unique_ptr<Model> createDifferentialModel(
+    int stepCount,
+    InputType inputType
+)
+{
+    double b{};
+    double timeStep{};
+    double inputValue{};
+
+    std::cout << "Enter b: ";
+    if (!(std::cin >> b))
+    {
+        throw std::invalid_argument("Invalid b.");
+    }
+
+    std::cout << "Enter time step dt: ";
+    if (!(std::cin >> timeStep))
+    {
+        throw std::invalid_argument("Invalid dt.");
+    }
+
+    std::cout << "Enter input value: ";
+    if (!(std::cin >> inputValue))
+    {
+        throw std::invalid_argument("Invalid input value.");
+    }
+
+    return std::make_unique<Differential>(
+        b, timeStep, stepCount, inputType, inputValue
+    );
+}
+
+std::unique_ptr<Model> createModel(
+    int modelChoice,
+    int stepCount,
+    InputType inputType
+)
+{
+    switch (modelChoice)
+    {
+    case 1:
+        return createLinearModel(stepCount, inputType);
+
+    case 2:
+        return createNonlinearModel(stepCount, inputType);
+
+    case 3:
+        return createDifferentialModel(stepCount, inputType);
+
+    default:
+        return nullptr;
+    }
+}
+
+void saveModelCSV(Model& model)
+{
+    std::string filename{};
+
+    std::cout << "Enter CSV filename: ";
+
+    if (!(std::cin >> filename))
+    {
+        throw std::invalid_argument("Invalid filename.");
+    }
+
+    model.saveCSV(filename);
+}
+
+void showModelGraph(const Model& model)
+{
+    const auto filename = model.GetFilename();
+
+    if (filename.empty())
+    {
+        std::cout << "Сначала сохраните модель в CSV.\n";
+        return;
+    }
+
+    showGraph(filename);
+}
+
+void printModelMenu()
+{
+    std::cout
+        << "\n========== MODEL MENU ==========\n"
+        << "1. Run model\n"
+        << "2. Show results\n"
+        << "3. Save CSV\n"
+        << "4. Show graph\n"
+        << "0. Return\n"
+        << "Choose: ";
+}
+
+void runModelAction(Model& model)
+{
+    model.StartModel();
+    std::cout << "Model calculated.\n";
+}
+
+void handleModelChoice(int choice, Model& model, bool& running)
+{
+    switch (choice)
+    {
+    case 1:
+        runModelAction(model);
+        break;
+
+    case 2:
+        model.show_y();
+        break;
+
+    case 3:
+        saveModelCSV(model);
+        break;
+
+    case 4:
+        showModelGraph(model);
+        break;
+
+    case 0:
+        running = false;
+        break;
+
+    default:
+        std::cout << "Invalid choice. Try again.\n";
+        break;
+    }
+}
+
+void runModelMenu(Model& model)
+{
+    bool running = true;
+
+    while (running)
+    {
+        printModelMenu();
+
+        if (int choice{}; std::cin >> choice)
         {
-            std::cout << "Exit\n";
-            break;
+            handleModelChoice(choice, model, running);
         }
-
-        InputType inputType = chooseInputType();
-
-        int n;
-
-        std::cout << "\nEnter number of steps n: ";
-        std::cin >> n;
-
-        // LINEAR MODEL
-        if (modelChoice == 1)
-        {
-            double a1;
-            double a2;
-            double b;
-            double u;
-            int k;
-
-            std::cout << "\n========== LINEAR MODEL ==========\n";
-
-            std::cout << "Enter a1: ";
-            std::cin >> a1;
-
-            std::cout << "Enter a2: ";
-            std::cin >> a2;
-
-            std::cout << "Enter b: ";
-            std::cin >> b;
-
-            std::cout << "Enter k: ";
-            std::cin >> k;
-
-            std::cout << "Enter u: ";
-            std::cin >> u;
-
-            model = std::make_unique<Liner>(a1, a2, b, k, n, inputType, u);
-        }
-
-        // NONLINEAR MODEL
-        else if (modelChoice == 2)
-        {
-            double a;
-            double b;
-            double e;
-            double u;
-
-            std::cout << "\n========== NONLINEAR MODEL ==========\n";
-
-            std::cout << "Enter a: ";
-            std::cin >> a;
-
-            std::cout << "Enter b: ";
-            std::cin >> b;
-
-            std::cout << "Enter e: ";
-            std::cin >> e;
-
-            std::cout << "Enter u: ";
-            std::cin >> u;
-
-            model = std::make_unique<NonLiner>(a, b, e, n, inputType, u);
-        }
-
-        // DIFFERENTIAL MODEL
-        else if (modelChoice == 3)
-        {
-            double b;
-            double dt;
-            double u;
-
-            std::cout << "\n========== DIFFERENTIAL MODEL ==========\n";
-
-            std::cout << "Enter b: ";
-            std::cin >> b;
-
-            std::cout << "Enter dt: ";
-            std::cin >> dt;
-
-            std::cout << "Enter u: ";
-            std::cin >> u;
-
-            model = std::make_unique<Differential>(b, dt, n, inputType, u);
-        }
-
-
         else
         {
-            std::cout << "Unknown model.\n";
-            continue;
+            throw std::invalid_argument("Invalid menu choice.");
         }
+    }
+}
 
-        while (true)
+void printMainMenu()
+{
+    std::cout
+        << "\n========== MAIN MENU ==========\n"
+        << "1. Linear model\n"
+        << "2. Nonlinear model\n"
+        << "3. Differential model\n"
+        << "0. Exit\n"
+        << "Choose model: ";
+}
+
+void runSelectedModel(int modelChoice)
+{
+    int stepCount{};
+
+    std::cout << "Enter number of steps: ";
+
+    if (!(std::cin >> stepCount))
+    {
+        throw std::invalid_argument("Invalid step count.");
+    }
+
+    if (stepCount < 1)
+    {
+        throw std::invalid_argument(
+            "Number of steps must be greater than zero."
+        );
+    }
+
+    const auto inputType = chooseInputType();
+    auto model = createModel(modelChoice, stepCount, inputType);
+
+    if (model != nullptr)
+    {
+        runModelMenu(*model);
+    }
+}
+
+int main()
+{
+    std::setlocale(LC_ALL, "");
+
+    try
+    {
+        bool running = true;
+
+        while (running)
         {
-            std::cout << "\n========== MODEL MENU ==========\n";
-            std::cout << "1. Start model\n";
-            std::cout << "2. Show y\n";
-            std::cout << "3. Save CSV\n";
-            std::cout << "4. make graph\n";
-            std::cout << "0. Back\n";
-            std::cout << "Choose: ";
+            printMainMenu();
 
-            int choice;
-            std::cin >> choice;
-
-            if (choice == 0)
-                break;
-
-            switch (choice)
+            if (int choice{}; std::cin >> choice)
             {
-                case 1:
-                    model->StartModel();
-                    std::cout << "Model completed.\n";
-                    break;
-
-                case 2:
-                    model->show_y();
-                    break;
-
-                case 3:
+                if (choice == 0)
                 {
-                    std::string filename;
-
-                    std::cout << "Enter filename: ";
-                    std::cin >> filename;
-
-                    model->saveCSV(filename);
-
-                    std::cout << "CSV saved.\n";
-                    break;
+                    running = false;
                 }
-                case 4:
-                {   
-                    const std::string name = model->GetFilename();
-                    if(!name.empty())
-                        showGraph(name);
-                    else
-                        std::cout<<"Yuo need to save data to CSV file";
-                    break;
+                else if (choice >= 1 && choice <= 3)
+                {
+                    runSelectedModel(choice);
                 }
-
-                default:
-                    std::cout << "Unknown command.\n";
-                    break;
+                else
+                {
+                    std::cout << "Invalid model choice.\n";
+                }
+            }
+            else
+            {
+                throw std::invalid_argument("Invalid model choice.");
             }
         }
     }
+    catch (const std::exception& error)
+    {
+        std::cerr << "Error: " << error.what() << '\n';
+        return EXIT_FAILURE;
+    }
 
-    return 0;
+    return EXIT_SUCCESS;
 }
