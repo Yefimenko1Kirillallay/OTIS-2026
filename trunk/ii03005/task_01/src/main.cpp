@@ -8,10 +8,19 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <process.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <cerrno>
+
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 
 namespace fs = std::filesystem;
 
@@ -300,17 +309,54 @@ InputType chooseInputType()
     }
 }
 
+
 void showGraph()
 {
+#ifdef _WIN32
     const std::array<const char*, 3> arguments = {
-        PYTHON_EXECUTABLE, PLOT_SCRIPT, nullptr};
+        PYTHON_EXECUTABLE, PLOT_SCRIPT, nullptr
+    };
 
-    if (const auto result = _spawnv(_P_WAIT, PYTHON_EXECUTABLE, arguments.data());
-        result != 0)
+    if (_spawnv(_P_WAIT, PYTHON_EXECUTABLE, arguments.data()) != 0)
     {
         std::cerr << "Не удалось запустить Python.\n";
     }
+#else
+    const pid_t pid = fork();
+
+    if (pid == -1)
+    {
+        std::cerr << "Не удалось создать процесс Python.\n";
+        return;
+    }
+
+    if (pid == 0)
+    {
+        execl(PYTHON_EXECUTABLE, PYTHON_EXECUTABLE, PLOT_SCRIPT,
+              static_cast<char*>(nullptr));
+
+        std::cerr << "Не удалось запустить Python.\n";
+        _exit(EXIT_FAILURE);
+    }
+
+    int status = 0;
+
+    while (waitpid(pid, &status, 0) == -1)
+    {
+        if (errno != EINTR)
+        {
+            std::cerr << "Ошибка ожидания завершения Python.\n";
+            return;
+        }
+    }
+
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+    {
+        std::cerr << "Ошибка выполнения скрипта построения графика.\n";
+    }
+#endif
 }
+
 
 double readStepInput(InputType type)
 {
