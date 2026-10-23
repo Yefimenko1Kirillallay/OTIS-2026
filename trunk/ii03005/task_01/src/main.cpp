@@ -56,18 +56,18 @@ public:
     void showResult() const
     {
         std::cout << '\n'
-                  << "+------------+----------------+----------------+\n"
-                  << "|      t     |        u       |        y       |\n"
-                  << "+------------+----------------+----------------+\n";
+                  << "+----------+----------------+----------------+\n"
+                  << "|     t    |        u       |        y       |\n"
+                  << "+----------+----------------+----------------+\n";
 
         for (std::size_t i = 0; i < stepCount_; ++i)
         {
             std::cout << std::format(
-                "| {:>10.4f} | {:>14.4f} | {:>14.4f} |\n",
-                timeAt(i), u_[i], y_[i]);
+                "| {:>8} | {:>14.4f} | {:>14.4f} |\n",
+                (i+1), u_[i], y_[i]);
         }
 
-        std::cout << "+------------+----------------+----------------+\n\n";
+        std::cout << "+----------+----------------+----------------+\n\n";
     }
 
     void saveCsv()
@@ -361,7 +361,7 @@ void showGraph()
 double readStepInput(InputType type)
 {
     return type == InputType::Step
-        ? readValue<double>("Enter input value: ")
+        ? readValue<double>("\nEnter input value: ")
         : 0.0;
 }
 
@@ -372,37 +372,43 @@ std::unique_ptr<Model> createModel(int modelChoice, int stepCount, InputType typ
     switch (modelChoice)
     {
     case 1:
-    {
+    {   
+        std::cout << "\n\n=====================================\n";
         std::cout << "y_t+1 = a1 * y_t + a2 * y_t-k + b * u\n";
+        std::cout << "=====================================\n";
         return std::make_unique<Linear>(
-            readValue<double>("Enter a1: "),
-            readValue<double>("Enter a2: "),
-            readValue<double>("Enter b: "),
+            readValue<double>("\nEnter a1: "),
+            readValue<double>("\nEnter a2: "),
+            readValue<double>("\nEnter b: "),
             static_cast<std::size_t>(readValue<int>(
-                "Enter delay k: ",
+                "\nEnter delay k: ",
                 [](int k) { return k >= 1; },
                 "Delay must be at least one.")),
             stepCount, type, inputValue);
     }
     case 2:
     {
+        std::cout << "\n\n=====================================\n";
         std::cout << "y_t+1 = a * y_t + b * relay(u, y_t)\n";
+        std::cout << "=====================================\n";
         return std::make_unique<NonLinear>(
-            readValue<double>("Enter a: "),
-            readValue<double>("Enter b: "),
+            readValue<double>("\nEnter a: "),
+            readValue<double>("\nEnter b: "),
             readValue<double>(
-                "Enter threshold e: ",
+                "\nEnter threshold e: ",
                 [](double e) { return e >= 0.0; },
                 "Threshold must be non-negative."),
             stepCount, type, inputValue);
     }
     case 3:
-    {
-        std::cout << "y_t+1 = y_t + dt * b * tanh(u)\n";
+    {   
+        std::cout << "\n\n=====================================\n";
+        std::cout << "y_t+1 = y_t + dt * b * tanh(u)\n";        
+        std::cout << "=====================================\n";
         return std::make_unique<Differential>(
-            readValue<double>("Enter b: "),
+            readValue<double>("\nEnter b: "),
             readValue<double>(
-                "Enter time step dt: ",
+                "\nEnter time step dt: ",
                 [](double dt) { return dt > 0.0; },
                 "Time step must be greater than zero."),
             stepCount, type, inputValue);
@@ -415,13 +421,13 @@ std::unique_ptr<Model> createModel(int modelChoice, int stepCount, InputType typ
 void runSelectedModel(int modelChoice)
 {
     const int stepCount = readValue<int>(
-        "Enter number of steps: ",
+        "\nEnter number of steps: ",
         [](int c) { return c >= 1; },
         "Number of steps must be greater than zero.");
 
     auto model = createModel(modelChoice, stepCount, chooseInputType());
     model->run();
-    std::cout << "Model calculated.\n";
+    std::cout << "\n------Model calculated------\n";
     model->showResult();
     model->saveCsv();
     showGraph();
@@ -436,7 +442,7 @@ int main()
         const int choice = readValue<int>(
             "\n========== MAIN MENU ==========\n"
             "1. Linear model\n2. Nonlinear model\n"
-            "3. Differential model\n0. Exit\nChoose model: ",
+            "3. Differential model\n0. Exit\n\nChoose model: ",
             [](int c) { return c >= 0 && c <= 3; },
             "Invalid model choice.");
 
