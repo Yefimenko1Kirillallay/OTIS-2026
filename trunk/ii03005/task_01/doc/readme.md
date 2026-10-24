@@ -120,18 +120,11 @@ $$
 
 **Bounded Saturation Rate:**
 
-$$
-\frac{dy}{dt}=b\tanh(u)
-$$
+$$\frac{dy}{dt}=b\tanh(u)$$
 
 Для численного решения используется явная схема Эйлера:
 
-$$
-y_{\tau+1}
-=
-y_\tau+
-\Delta t\cdot b\tanh(u_\tau)
-$$
+$$y_{\tau+1} = y_\tau + \Delta t\cdot b\tanh(u_\tau)$$
 
 где $\Delta t$ — шаг интегрирования.
 
