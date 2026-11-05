@@ -2,12 +2,11 @@
 setlocal
 cd /d "%~dp0"
 echo Configuring and building Task 02...
-cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake -S src -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 if errorlevel 1 exit /b 1
 cmake --build build
 if errorlevel 1 exit /b 1
-del /q build\CMakeFiles\models.dir\src\*.gcda >nul 2>nul
-del /q build\CMakeFiles\Task02Tests.dir\test\*.gcda >nul 2>nul
+del /s /q build\CMakeFiles\*.gcda >nul 2>nul
 echo Running Google Test...
 ctest --test-dir build --output-on-failure
 if errorlevel 1 exit /b 1
