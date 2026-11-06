@@ -234,9 +234,9 @@ void runSelectedModel(int modelChoice)
     std::cout << "\n------Model calculated------\n";
     model->showResult();
 
-    const std::string outputPath =
-        std::string(OUTPUT_DIRECTORY) + "/results.csv";
-    if (!model->saveCsv(outputPath))
+    if (const std::string outputPath =
+            std::string(OUTPUT_DIRECTORY) + "/results.csv";
+        !model->saveCsv(outputPath))
     {
         std::cerr << "Ошибка записи CSV-файла.\n";
     }

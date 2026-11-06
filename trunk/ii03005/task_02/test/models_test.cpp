@@ -16,7 +16,7 @@ class LinearSimulationTest : public testing::TestWithParam<std::tuple<double, do
 
 TEST_P(LinearSimulationTest, CalculatesExpectedFirstSteps)
 {
-    const auto [a1, a2, b] = GetParam();
+    const auto& [a1, a2, b] = GetParam();
     Linear model(a1, a2, b, 1, 4, InputType::Step, 2.0);
     model.run();
     const auto& y = model.outputs();
